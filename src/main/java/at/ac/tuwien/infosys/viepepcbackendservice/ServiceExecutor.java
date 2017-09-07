@@ -4,40 +4,34 @@ package at.ac.tuwien.infosys.viepepcbackendservice;
 import at.ac.tuwien.infosys.viepepcbackendservice.database.entities.services.ServiceType;
 import at.ac.tuwien.infosys.viepepcbackendservice.registry.ServiceRegistryReader;
 import at.ac.tuwien.infosys.viepepcbackendservice.registry.impl.service.ServiceTypeNotFoundException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.martensigwart.fakeload.*;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
+import com.martensigwart.fakeload.FakeLoad;
+import com.martensigwart.fakeload.FakeLoadBuilder;
+import com.martensigwart.fakeload.FakeLoadExecutor;
+import com.martensigwart.fakeload.FakeLoadExecutors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Component
 public class ServiceExecutor {
 
+    @Value("${messagebus.queue.name}")
+    private String queueName;
+
     @Autowired
     private ServiceRegistryReader serviceRegistryReader;
-
-    private final String queueName =  "viepepc.watchdog";
-
-    private int task;
-    private String processStepName;
-    private String plainModifier;
-    private String dataModifier;
-    private String messageBusIp;
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
 
     @Async
-    public void execute(int task, String processStepName, String plainModifier, String dataModifier, String messageBusIp) {
+    public void execute(int task, String processStepName, String plainModifier, String dataModifier) {
 
         try {
 
@@ -47,9 +41,6 @@ public class ServiceExecutor {
             UUID taskId = UUID.randomUUID();
 
             log.info("Start task with ID: " + taskId);
-
-
-//            TimeUnit.MILLISECONDS.sleep(serviceType.getServiceTypeResources().getMakeSpan());
 
             double cores = (double) Runtime.getRuntime().availableProcessors() * 100;
             double absoluteCpuLoad = (double) serviceType.getServiceTypeResources().getCpuLoad();
@@ -83,7 +74,7 @@ public class ServiceExecutor {
             }
             log.info("Finished task with ID: " + taskId);
 
-            sendMessage(processStepName, result, messageBusIp);
+            sendMessage(processStepName, result);
 
         } catch (ServiceTypeNotFoundException e) {
             log.error("EXCEPTION", e);
@@ -91,56 +82,14 @@ public class ServiceExecutor {
     }
 
 
-    public void sendMessage(String processStepName, String result, String messageBusIp) {
+    public void sendMessage(String processStepName, String result) {
 
-        Connection connection = null;
-        Channel channel = null;
+        Message msg = new Message();
+        msg.setBody(result);
+        msg.setProcessStepName(processStepName);
+        msg.setStatus(ServiceExecutionStatus.DONE);
 
-        try {
-            ConnectionFactory factory = new ConnectionFactory();
-            factory.setHost(messageBusIp);
-            factory.setUsername("viepep");
-            factory.setPassword("viepep");
-            connection = factory.newConnection();
-            channel = connection.createChannel();
-
-            channel.queueDeclare(queueName, false, false, false, null);
-
-
-            Message msg = new Message();
-            msg.setBody(result);
-            msg.setProcessStepName(processStepName);
-            msg.setStatus(ServiceExecutionStatus.DONE);
-
-            ObjectMapper mapper = new ObjectMapper();
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            mapper.writeValue(out, msg);
-
-            channel.basicPublish("", queueName, null, out.toByteArray());
-            System.out.println("JSON-Message sent!");
-
-
-
-        } catch (IOException | TimeoutException e) {
-            log.error("EXCEPTION", e);
-        }
-        finally {
-            if(channel != null) {
-                try {
-                    channel.close();
-                } catch (IOException | TimeoutException e1) {
-                    log.error("EXCEPTION", e1);
-                }
-            }
-            if(connection != null) {
-                try {
-                    connection.close();
-                } catch (IOException e1) {
-                    log.error("EXCEPTION", e1);
-                }
-            }
-        }
-
+        rabbitTemplate.convertAndSend(queueName, msg);
     }
 
 
