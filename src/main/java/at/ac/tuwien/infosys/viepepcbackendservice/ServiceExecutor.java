@@ -4,17 +4,20 @@ package at.ac.tuwien.infosys.viepepcbackendservice;
 import at.ac.tuwien.infosys.viepepcbackendservice.database.entities.services.ServiceType;
 import at.ac.tuwien.infosys.viepepcbackendservice.registry.ServiceRegistryReader;
 import at.ac.tuwien.infosys.viepepcbackendservice.registry.impl.service.ServiceTypeNotFoundException;
+import com.google.common.math.DoubleMath;
 import com.martensigwart.fakeload.FakeLoad;
 import com.martensigwart.fakeload.FakeLoadBuilder;
 import com.martensigwart.fakeload.FakeLoadExecutor;
 import com.martensigwart.fakeload.FakeLoadExecutors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.math3.distribution.NormalDistribution;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
+import java.math.RoundingMode;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +27,9 @@ public class ServiceExecutor {
 
     @Value("${messagebus.queue.name}")
     private String queueName;
+
+    private Double lowerBound = 0.95;
+    private Double upperBound = 1.05;
 
     @Autowired
     private ServiceRegistryReader serviceRegistryReader;
@@ -44,13 +50,20 @@ public class ServiceExecutor {
 
             double cores = (double) Runtime.getRuntime().availableProcessors() * 100;
             double absoluteCpuLoad = (double) serviceType.getServiceTypeResources().getCpuLoad();
-            int cpuLoad = new Double(absoluteCpuLoad / cores * 100).intValue();
+
+            double cpuLoad = new Double(absoluteCpuLoad / cores * 100).intValue();
+            double makeSpan = serviceType.getServiceTypeResources().getMakeSpan();
+            if(!plainModifier.equals("plain")) {
+                cpuLoad = getNormalDistribution(cpuLoad);
+                makeSpan = getNormalDistribution(makeSpan);
+            }
+
 
             log.info("cores: " + cores + ", absoluteCpuLoad: " + absoluteCpuLoad + ", cpuLoad: " + cpuLoad);
 
             FakeLoad fakeload = new FakeLoadBuilder()
-                    .lasting(serviceType.getServiceTypeResources().getMakeSpan(), TimeUnit.MILLISECONDS)
-                    .withCpu(cpuLoad)
+                    .lasting(DoubleMath.roundToLong(makeSpan, RoundingMode.CEILING), TimeUnit.MILLISECONDS)
+                    .withCpu(DoubleMath.roundToInt(cpuLoad, RoundingMode.CEILING))
                     .build();
 
             FakeLoadExecutor executor = FakeLoadExecutors.newDefaultExecutor();
@@ -78,6 +91,16 @@ public class ServiceExecutor {
 
         } catch (ServiceTypeNotFoundException e) {
             log.error("EXCEPTION", e);
+        }
+    }
+
+    private Double getNormalDistribution(Double value) {
+        while (true) {
+            NormalDistribution n = new NormalDistribution(value, value / 10);
+            Double result = Math.abs(n.sample());
+            if ((result > (value * lowerBound)) && (result < (value * upperBound))) {
+                return result;
+            }
         }
     }
 

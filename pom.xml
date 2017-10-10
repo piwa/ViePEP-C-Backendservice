@@ -52,9 +52,15 @@
 		</dependency>
 
 		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-math3</artifactId>
+			<version>3.6.1</version>
+		</dependency>
+
+		<dependency>
 			<groupId>com.martensigwart</groupId>
 			<artifactId>fakeload</artifactId>
-			<version>0.3.0</version>
+			<version>0.3.4</version>
 		</dependency>
 
 		<dependency>
