@@ -24,3 +24,4 @@ nbdist/
 .nb-gradle/
 
 messagebus.properties
+docker_build_push.sh
