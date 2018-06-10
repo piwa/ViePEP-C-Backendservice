@@ -27,6 +27,8 @@ public class ServiceExecutor {
 
     @Value("${messagebus.queue.name}")
     private String queueName;
+    @Value("${with.fake.load}")
+    private boolean withFakeLoad;
 
     private Double lowerBound = 0.95;
     private Double upperBound = 1.05;
@@ -58,17 +60,20 @@ public class ServiceExecutor {
                 makeSpan = getNormalDistribution(makeSpan);
             }
 
+            if(withFakeLoad) {
+                log.info("cores: " + cores + ", absoluteCpuLoad: " + absoluteCpuLoad + ", cpuLoad: " + cpuLoad);
 
-            log.info("cores: " + cores + ", absoluteCpuLoad: " + absoluteCpuLoad + ", cpuLoad: " + cpuLoad);
+                FakeLoad fakeload = new FakeLoadBuilder()
+                        .lasting(DoubleMath.roundToLong(makeSpan, RoundingMode.CEILING), TimeUnit.MILLISECONDS)
+                        .withCpu(DoubleMath.roundToInt(cpuLoad, RoundingMode.CEILING))
+                        .build();
 
-            FakeLoad fakeload = new FakeLoadBuilder()
-                    .lasting(DoubleMath.roundToLong(makeSpan, RoundingMode.CEILING), TimeUnit.MILLISECONDS)
-                    .withCpu(DoubleMath.roundToInt(cpuLoad, RoundingMode.CEILING))
-                    .build();
-
-            FakeLoadExecutor executor = FakeLoadExecutors.newDefaultExecutor();
-            executor.execute(fakeload);
-
+                FakeLoadExecutor executor = FakeLoadExecutors.newDefaultExecutor();
+                executor.execute(fakeload);
+            }
+            else {
+                TimeUnit.MILLISECONDS.sleep(DoubleMath.roundToLong(makeSpan, RoundingMode.CEILING));
+            }
             String result = "";
 
             if(!dataModifier.equals("nodata")) {
@@ -89,7 +94,7 @@ public class ServiceExecutor {
 
             sendMessage(processStepName, result);
 
-        } catch (ServiceTypeNotFoundException e) {
+        } catch (Exception e) {
             log.error("EXCEPTION", e);
         }
     }

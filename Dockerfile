@@ -1,4 +1,5 @@
-FROM jeanblanchard/java:8
+#FROM jeanblanchard/java:jre-8
+FROM openjdk:8-jre-alpine
 MAINTAINER Philipp Waibel
 
 ADD target/viepep-c-backendservice-0.0.1-SNAPSHOT.jar /target.jar
